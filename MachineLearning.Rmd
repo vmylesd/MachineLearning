@@ -1,0 +1,177 @@
+---
+title: Practical Machine Learning Project
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Practical Machine Learning Course Project Report  
+================================================  
+
+## Background  
+
+The use of devices such as Jawbone Up, Nike FuelBand, and Fitbit is increasing amongst those who are involved in quantified self movement.  These people regularly quantify particular activities. In this project, the goal is to use data from belt, forearm, arm, accelerometers and dumbbells.   6 participants were included, and were required to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+## Data Sources  
+The training data for this project is available here:  
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)  
+The test data is available here:  
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)  
+The data for this project comes from this original source: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har). 
+
+
+## Objective
+
+The goal of this project is to predict the manner in which they did the exercise. 
+
+```{r warning=FALSE, error=FALSE}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+```  
+
+```{r warning=FALSE, error=FALSE}
+set.seed(56789)
+```  
+
+## Data import 
+
+Datasets are downloaded as follows:
+
+```{r warning=FALSE, error=FALSE}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile, method = "curl")
+}
+rm(trainUrl)
+rm(testUrl)
+```  
+
+## Data reading
+
+```{r warning=FALSE, error=FALSE}
+trainRaw <- read.csv(trainFile)
+testRaw <- read.csv(testFile)
+dim(trainRaw)
+dim(testRaw)
+rm(trainFile)
+rm(testFile)
+```  
+
+## Data cleaning
+
+1. Exclude near zero variance variables.  
+
+```{r warning=FALSE, error=FALSE}
+NZV <- nearZeroVar(trainRaw, saveMetrics = TRUE)
+head(NZV, 20)
+training01 <- trainRaw[, !NZV$nzv]
+testing01 <- testRaw[, !NZV$nzv]
+dim(training01)
+dim(testing01)
+rm(trainRaw)
+rm(testRaw)
+rm(NZV)
+```  
+
+2. Non applicable variables removed.  
+
+```{r warning=FALSE, error=FALSE}
+regex <- grepl("^X|timestamp|user_name", names(training01))
+training <- training01[, !regex]
+testing <- testing01[, !regex]
+rm(regex)
+rm(training01)
+rm(testing01)
+dim(training)
+dim(testing)
+```  
+
+3. Remove NAs  
+
+```{r warning=FALSE, error=FALSE}
+cond <- (colSums(is.na(training)) == 0)
+training <- training[, cond]
+testing <- testing[, cond]
+rm(cond)
+```  
+
+Correlation plot of training dataset  
+
+```{r warning=FALSE, error=FALSE}
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+```  
+
+## Partitioning training dataset
+
+Data split into training set (70%) and validation set (30%). 
+
+```{r warning=FALSE, error=FALSE}
+set.seed(56789) # For reproducibile purpose
+inTrain <- createDataPartition(training$classe, p = 0.70, list = FALSE)
+validation <- training[-inTrain, ]
+training <- training[inTrain, ]
+rm(inTrain)
+```  
+Datasets now include:
+
+1. Training Data: `r dim(training)[1]` observations.  
+2. Validation Data: `r dim(validation)[1]` observations.  
+3. Testing Data: `r dim(testing)[1]` observations.  
+
+## Data modelling  
+
+### Decision Tree  
+
+A predictive model was developed in order to identify activity.
+
+```{r warning=FALSE, error=FALSE}
+modelTree <- rpart(classe ~ ., data = training, method = "class")
+prp(modelTree)
+```  
+
+Model performance on the validation dataset.  
+
+```{r warning=FALSE, error=FALSE}
+predictTree <- predict(modelTree, validation, type = "class")
+confusionMatrix(predictTree,as.factor(validation$classe))
+accuracy <- postResample(predictTree, as.numeric(validation$classe))
+rm(predictTree)
+rm(modelTree)
+```  
+The Estimated accuracy is `r accuracy[1]*100% 
+
+### Random Forest
+
+A predictive model was devised using the Random Forest algorithm, with a 5-fold cross validation
+
+```{r warning=FALSE, error=FALSE}
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 50)
+modelRF
+```  
+
+The model as tested on the validation dataset.  
+
+```{r warning=FALSE, error=FALSE}
+predictRF <- predict(modelRF, validation)
+confusionMatrix(predictRF,as.factor(validation$classe))
+accuracy <- postResample(predictRF, as.numeric(validation$classe))
+rm(predictRF)
+```  
+The model accuracy is estimated as `r accuracy[1]*100`% 
+
